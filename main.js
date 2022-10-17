@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TG-freee-Utils
 // @namespace    http://tampermonkey.net/
-// @version      1.2.1
+// @version      1.3.0
 // @description  TG用 freeeのUtil。自動でログインしたり、自動で退勤したり。
 // @author       @__MOX__
 // @match        https://accounts.secure.freee.co.jp/*
