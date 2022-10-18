@@ -8,6 +8,8 @@
 // @match        https://p.secure.freee.co.jp/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=freee.co.jp
 // @grant        GM_notification
+// @grant        GM_xmlhttpRequest
+// @connect      holidays-jp.github.io
 // ==/UserScript==
 
 (function () {
@@ -33,6 +35,9 @@
         leaveWaitSec: 120,
         // 何もしなかったときに自動で退勤するまでの時間の歪み
         leaveWaitJitterSec: 120,
+
+        // 祝日の一覧をとってくるAPI
+        holidayApi: 'https://holidays-jp.github.io/api/v1/datetime.json'
     };
 
     const GLOBAL_STATE = {
@@ -42,6 +47,26 @@
 
     Object.freeze(SETTINGS);
 
+
+    /**
+     * 祝日の一覧を取得する
+     */
+    const getHolidayList = () => {
+        const url = SETTINGS.holidayApi;
+        return new Promise(resolve =>
+            GM_xmlhttpRequest({
+                method: "GET",
+                url,
+                onload: response => {
+                    const json = JSON.parse(response.responseText);
+                    const holidayList = Object.keys(json).map(h => new Date(h * 1000));
+                    console.log(holidayList);
+                    resolve(holidayList);
+                },
+                withCredentials: true,
+            })
+        );
+    }
 
     /**
      * ログインを試行する。URLが /login/hr であればログインを試行する。
@@ -271,7 +296,7 @@
      * 定刻になったら自動で出勤するためのスケジューラーを設定する
      */
     const setAutoJoin = () => {
-        setInterval(() => {
+        setInterval(async () => {
             const currentBeforeJoining = isBeforeJoined();
             console.log(LOG_PREFIX, 'current before joining', currentBeforeJoining);
             if (!currentBeforeJoining) {
@@ -303,6 +328,21 @@
             }
             console.log(LOG_PREFIX, 'join push (', joinSub, ')');
 
+            // 休日チェック
+            const dayOfWeek = now.getDay();
+            if (dayOfWeek == 0 || dayOfWeek == 6) {
+                console.log(LOG_PREFIX, 'today is holiday(Sunday or Saturday). not join.');
+                return;
+            }
+
+            // 祝日チェック
+            const holidays = await getHolidayList();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            if (holidays.some(e => e.getTime() === today.getTime())) {
+                console.log(LOG_PREFIX, 'today is holiday (sp). not join.');
+                return;
+            }
+
             const joinButton = getJoinButton();
             if (!joinButton) {
                 console.log(LOG_PREFIX, 'join button not found!');
@@ -311,7 +351,6 @@
             joinButton.click();
         }, 1 * 1000);
     }
-
 
     tryAutoLogin();
     setAutoLeave();
