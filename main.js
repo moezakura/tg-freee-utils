@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TG-freee-Utils
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.5.0
 // @description  TG用 freeeのUtil。自動でログインしたり、自動で退勤したり。
 // @author       @__MOX__
 // @match        https://accounts.secure.freee.co.jp/*
@@ -9,6 +9,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=freee.co.jp
 // @grant        GM_notification
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @connect      holidays-jp.github.io
 // ==/UserScript==
 
@@ -47,6 +49,7 @@
 
     Object.freeze(SETTINGS);
 
+    const intervals = [];
 
     /**
      * 祝日の一覧を取得する
@@ -66,6 +69,14 @@
                 withCredentials: true,
             })
         );
+    }
+
+    /**
+     * 全てのインターバルをクリアする
+     */
+    const stopAllIntervals = () => {
+        intervals.forEach(i => clearInterval(i));
+        intervals.length = 0;
     }
 
     /**
@@ -107,12 +118,13 @@
 
     // ログイン画面以外で3分おきにheartbeatを実行する
     const heartbeatInterval = () => {
-        setInterval(() => {
+        const id = setInterval(() => {
             if (location.hostname !== 'p.secure.freee.co.jp') {
                 return;
             }
             heartbeat();
-        }, 1000 * 60 * 3)
+        }, 1000 * 60 * 3);
+        intervals.push(id);
     };
 
     /**
@@ -267,7 +279,7 @@
      * 定刻になったら自動で抜けるためのスケジューラーを設定する
      */
     const setAutoLeave = () => {
-        setInterval(() => {
+        const id = setInterval(() => {
             const currentJoining = isJoining();
             console.log(LOG_PREFIX, 'current joining', currentJoining);
             if (!currentJoining) {
@@ -289,6 +301,7 @@
             }
 
         }, 1 * 1000);
+        intervals.push(id);
     };
 
 
@@ -296,7 +309,7 @@
      * 定刻になったら自動で出勤するためのスケジューラーを設定する
      */
     const setAutoJoin = () => {
-        setInterval(async () => {
+        const id = setInterval(async () => {
             const currentBeforeJoining = isBeforeJoined();
             console.log(LOG_PREFIX, 'current before joining', currentBeforeJoining);
             if (!currentBeforeJoining) {
@@ -322,6 +335,15 @@
             const joinTimeUnix = new Date(now.getFullYear(), now.getMonth(), now.getDate(), joinTime.h, joinTime.m, 0).getTime();
             const minPer = -(joinTimeUnix - now.getTime()) / jitterMsec;
             const joinSub = Math.random() * (1 - minPer) + minPer;
+
+            // 開始時間直前に一旦リロードしてデータを同期させる
+            const lastLoadTime = await GM_getValue('lastLoadTime', 0);
+            if (lastLoadTime < joinTimeUnix) {
+                console.log(lastLoadTime < joinTimeUnix, lastLoadTime, joinTimeUnix);
+                stopAllIntervals();
+                location.reload();
+            }
+
             // 10%の確率で打刻する
             if (joinSub < 0.90) {
                 return;
@@ -350,10 +372,17 @@
             }
             joinButton.click();
         }, 1 * 1000);
+        intervals.push(id);
     }
 
-    tryAutoLogin();
-    setAutoLeave();
-    heartbeatInterval();
-    setAutoJoin();
+    window.addEventListener('load', () => {
+        // 読み込みした日時を入れておく
+        const loadTime = new Date();
+        GM_setValue('lastLoadTime', loadTime.getTime());
+
+        tryAutoLogin();
+        setAutoLeave();
+        heartbeatInterval();
+        setAutoJoin();
+    });
 })();
