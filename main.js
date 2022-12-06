@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TG-freee-Utils
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.5.1
 // @description  TG用 freeeのUtil。自動でログインしたり、自動で退勤したり。
 // @author       @__MOX__
 // @match        https://accounts.secure.freee.co.jp/*
@@ -310,11 +310,6 @@
      */
     const setAutoJoin = () => {
         const id = setInterval(async () => {
-            const currentBeforeJoining = isBeforeJoined();
-            console.log(LOG_PREFIX, 'current before joining', currentBeforeJoining);
-            if (!currentBeforeJoining) {
-                return;
-            }
             const now = new Date();
 
             const nowTime = ('00' + now.getHours()).slice(-2) + ':' + ('00' + now.getMinutes()).slice(-2);
@@ -323,18 +318,15 @@
                 h: now.getHours(),
                 m: now.getMinutes(),
             }
-
-            console.log(LOG_PREFIX, 'now', nowTime, 'join time', SETTINGS.joinStartTime);
+            const jitterMsec = SETTINGS.joinJitterSec * 1000
+            const joinTimeUnix = new Date(now.getFullYear(), now.getMonth(), now.getDate(), joinTime.h, joinTime.m, 0).getTime();
+            const minPer = -(joinTimeUnix - now.getTime()) / jitterMsec;
+            const joinSub = Math.random() * (1 - minPer) + minPer;
 
             // 開始予定時刻より前であれば何もしない
             if (!(nowTimes.h > joinTime.h || (nowTimes.h == joinTime.h && nowTimes.m >= joinTime.m))) {
                 return;
             }
-
-            const jitterMsec = SETTINGS.joinJitterSec * 1000
-            const joinTimeUnix = new Date(now.getFullYear(), now.getMonth(), now.getDate(), joinTime.h, joinTime.m, 0).getTime();
-            const minPer = -(joinTimeUnix - now.getTime()) / jitterMsec;
-            const joinSub = Math.random() * (1 - minPer) + minPer;
 
             // 開始時間直前に一旦リロードしてデータを同期させる
             const lastLoadTime = await GM_getValue('lastLoadTime', 0);
@@ -343,6 +335,14 @@
                 stopAllIntervals();
                 location.reload();
             }
+
+            const currentBeforeJoining = isBeforeJoined();
+            console.log(LOG_PREFIX, 'current before joining', currentBeforeJoining);
+            if (!currentBeforeJoining) {
+                return;
+            }
+
+            console.log(LOG_PREFIX, 'now', nowTime, 'join time', SETTINGS.joinStartTime);
 
             // 10%の確率で打刻する
             if (joinSub < 0.90) {
